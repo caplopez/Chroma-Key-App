@@ -1,0 +1,249 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no" ?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val="code"/></w:pPr><w:r><w:t><![CDATA[classdef cromakeyapp < matlab.apps.AppBase
+
+    % Properties that correspond to app components
+    properties (Access = public)
+        UIFigure                  matlab.ui.Figure
+        CargarimagenchromaButton  matlab.ui.control.Button
+        CargarimagenfondoButton   matlab.ui.control.Button
+        MagicButton               matlab.ui.control.Button
+        Image                     matlab.ui.control.Image
+        ToleranciaEditFieldLabel  matlab.ui.control.Label
+        Tolerancia                matlab.ui.control.NumericEditField
+        SombraEditFieldLabel      matlab.ui.control.Label
+        Sombra                    matlab.ui.control.NumericEditField
+        UIAxes                    matlab.ui.control.UIAxes
+        UIAxes2                   matlab.ui.control.UIAxes
+        UIAxes3                   matlab.ui.control.UIAxes
+        UIAxes3_2                 matlab.ui.control.UIAxes
+    end
+
+    % Callbacks that handle component events
+    methods (Access = private)
+
+        % Button pushed function: CargarimagenchromaButton
+        function CargarimagenchromaButtonPushed(app, event)
+            global imagencroma
+            [filename pathname] = uigetfile({'*.jpg'},'Selecciona imagen Chroma')
+            fullpathname = strcat(pathname,filename)
+            imagencroma = imread(fullpathname)
+            imshow(imagencroma,'Parent',app.UIAxes)
+        end
+
+        % Button pushed function: CargarimagenfondoButton
+        function CargarimagenfondoButtonPushed(app, event)
+            global imagenfondo
+            [filename pathname] = uigetfile({'*.jpg'},'Selecciona imagen Chroma')
+            fullpathname = strcat(pathname,filename)
+            imagenfondo = imread(fullpathname)
+            imshow(imagenfondo,'Parent',app.UIAxes2)
+        end
+
+        % Button pushed function: MagicButton
+        function MagicButtonPushed(app, event)
+            Tolerancia = app.Tolerancia.Value;
+            Sombra = app.Sombra.Value;
+            global imagencroma
+            global imagenfondo
+         
+            %% AJUSTE DE LA RELACION DE AMBAS IMAGENES
+[X,Y,Z] = size(imagencroma);
+imagenfondo = imresize(imagenfondo, [X Y]);
+
+%% OBTENCION DEL COLOR DEL CROMA
+% Componentes de color
+R = imagencroma(:,:,1); G = imagencroma(:,:,2); B = imagencroma(:,:,3);
+% Obtenemos las medias de las componentes de color para ver cual predomina
+G_media = sum(sum(G))/(X+Y);
+B_media = sum(sum(B))/(X+Y);
+
+% Leemos de que color es el croma para poder leerlo de forma correcta
+if G_media > B_media
+    color_croma = 0; % Color verde
+else
+    color_croma = 1; % Color azul
+end
+
+%% EXTRACCIÃ“N DE LA CROMINANCIA Y LA LUMINANCIA DEL CROMA
+% Convertimos a double para poder trabajar con las imÃ¡genes
+imagenfondo = double(imagenfondo);
+imagencroma = double(imagencroma);
+% Obtenemos RGB y la matriz de luminancia
+R_croma = imagencroma(:,:,1);
+G_croma = imagencroma(:,:,2);
+B_croma = imagencroma(:,:,3);
+Y_croma = 0.299*R_croma + 0.587*G_croma + 0.114*B_croma;
+
+if color_croma == 0
+    C_croma = mat2gray(G_croma - Y_croma);
+else
+    C_croma = mat2gray(B_croma - Y_croma);
+end
+ 
+
+margen_I = Tolerancia/255;
+margen_Sombra = Sombra/255;
+
+% Establecemos como 1 aquellos valores de la mÃ¡scara donde C_croma es menor
+% que el umbral indicado anteriormente
+mascara1 = C_croma < margen_I;
+mascara2 = C_croma < margen_Sombra;
+
+%% TRATAMIENTO DE SOMBRAS Y BORDES
+% Promediamos las mÃ¡scaras 
+H_sombra = fspecial('average', [20,20]);
+H_fill = fspecial('average', [5,5]);
+% Filtramos la imagen para obtener unos bordes mÃ¡s suaves
+Sh_mask = imfilter(double(mascara2),H_sombra);
+Fill_mask = imfilter(double(mascara1),H_fill);
+
+%% OBTENCIÃ“N DEL RESULTADO FINAL
+% Aplicamos la ecuaciÃ³n del multiplicador doble
+% Si la mÃ¡scara es 1, nos quedamos con la imagen Fill
+% Si la mÃ¡scara es 0, nos quedamos con el fondo BKG
+
+resultado(:,:,1) = imagencroma(:,:,1).*Fill_mask + imagenfondo(:,:,1).*(1-Fill_mask).*(Sh_mask)*0.5 + imagenfondo(:,:,1).*(1-Fill_mask).*(1-Sh_mask);
+resultado(:,:,2) = imagencroma(:,:,2).*Fill_mask + imagenfondo(:,:,2).*(1-Fill_mask).*(Sh_mask)*0.5 + imagenfondo(:,:,2).*(1-Fill_mask).*(1-Sh_mask);
+resultado(:,:,3) = imagencroma(:,:,3).*Fill_mask + imagenfondo(:,:,3).*(1-Fill_mask).*(Sh_mask)*0.5 + imagenfondo(:,:,3).*(1-Fill_mask).*(1-Sh_mask);
+A = rgb2ntsc(imagencroma);
+imshow(uint8(resultado),'Parent',app.UIAxes3)
+imshow(A(:,:,1).*Fill_mask,'Parent',app.UIAxes3_2)
+        end
+
+        % Button down function: UIAxes3_2
+        function UIAxes3_2ButtonDown(app, event)
+            
+        end
+    end
+
+    % Component initialization
+    methods (Access = private)
+
+        % Create UIFigure and components
+        function createComponents(app)
+
+            % Create UIFigure and hide until all components are created
+            app.UIFigure = uifigure('Visible', 'off');
+            app.UIFigure.Position = [100 100 911 725];
+            app.UIFigure.Name = 'UI Figure';
+
+            % Create CargarimagenchromaButton
+            app.CargarimagenchromaButton = uibutton(app.UIFigure, 'push');
+            app.CargarimagenchromaButton.ButtonPushedFcn = createCallbackFcn(app, @CargarimagenchromaButtonPushed, true);
+            app.CargarimagenchromaButton.BackgroundColor = [1 0.4118 0.1608];
+            app.CargarimagenchromaButton.FontSize = 16;
+            app.CargarimagenchromaButton.FontWeight = 'bold';
+            app.CargarimagenchromaButton.Position = [140 427 184 44];
+            app.CargarimagenchromaButton.Text = 'Cargar imagen chroma';
+
+            % Create CargarimagenfondoButton
+            app.CargarimagenfondoButton = uibutton(app.UIFigure, 'push');
+            app.CargarimagenfondoButton.ButtonPushedFcn = createCallbackFcn(app, @CargarimagenfondoButtonPushed, true);
+            app.CargarimagenfondoButton.BackgroundColor = [1 0.4118 0.1608];
+            app.CargarimagenfondoButton.FontSize = 16;
+            app.CargarimagenfondoButton.FontWeight = 'bold';
+            app.CargarimagenfondoButton.Position = [585 427 181 44];
+            app.CargarimagenfondoButton.Text = 'Cargar imagen fondo';
+
+            % Create MagicButton
+            app.MagicButton = uibutton(app.UIFigure, 'push');
+            app.MagicButton.ButtonPushedFcn = createCallbackFcn(app, @MagicButtonPushed, true);
+            app.MagicButton.BackgroundColor = [0 0.4471 0.7412];
+            app.MagicButton.FontSize = 16;
+            app.MagicButton.FontWeight = 'bold';
+            app.MagicButton.FontColor = [1 1 1];
+            app.MagicButton.Position = [360 68 193 47];
+            app.MagicButton.Text = 'Magic';
+
+            % Create Image
+            app.Image = uiimage(app.UIFigure);
+            app.Image.Position = [-65 -58 390 173];
+            app.Image.ImageSource = '1.png';
+
+            % Create ToleranciaEditFieldLabel
+            app.ToleranciaEditFieldLabel = uilabel(app.UIFigure);
+            app.ToleranciaEditFieldLabel.HorizontalAlignment = 'right';
+            app.ToleranciaEditFieldLabel.FontWeight = 'bold';
+            app.ToleranciaEditFieldLabel.Position = [688 80 65 22];
+            app.ToleranciaEditFieldLabel.Text = 'Tolerancia';
+
+            % Create Tolerancia
+            app.Tolerancia = uieditfield(app.UIFigure, 'numeric');
+            app.Tolerancia.FontWeight = 'bold';
+            app.Tolerancia.Position = [768 80 73 22];
+
+            % Create SombraEditFieldLabel
+            app.SombraEditFieldLabel = uilabel(app.UIFigure);
+            app.SombraEditFieldLabel.HorizontalAlignment = 'right';
+            app.SombraEditFieldLabel.FontWeight = 'bold';
+            app.SombraEditFieldLabel.Position = [688 33 50 22];
+            app.SombraEditFieldLabel.Text = 'Sombra';
+
+            % Create Sombra
+            app.Sombra = uieditfield(app.UIFigure, 'numeric');
+            app.Sombra.FontWeight = 'bold';
+            app.Sombra.Position = [768 33 73 22];
+
+            % Create UIAxes
+            app.UIAxes = uiaxes(app.UIFigure);
+            title(app.UIAxes, 'Imagen de Chroma')
+            app.UIAxes.XTick = [];
+            app.UIAxes.YTick = [];
+            app.UIAxes.YTickLabel = '';
+            app.UIAxes.Box = 'on';
+            app.UIAxes.Position = [39 479 385 236];
+
+            % Create UIAxes2
+            app.UIAxes2 = uiaxes(app.UIFigure);
+            title(app.UIAxes2, 'Imagen de Fondo')
+            app.UIAxes2.XTick = [];
+            app.UIAxes2.YTick = [];
+            app.UIAxes2.Box = 'on';
+            app.UIAxes2.Position = [483 479 385 236];
+
+            % Create UIAxes3
+            app.UIAxes3 = uiaxes(app.UIFigure);
+            title(app.UIAxes3, 'Chroma Key')
+            app.UIAxes3.XTick = [];
+            app.UIAxes3.YTick = [];
+            app.UIAxes3.Box = 'on';
+            app.UIAxes3.Position = [39 154 385 240];
+
+            % Create UIAxes3_2
+            app.UIAxes3_2 = uiaxes(app.UIFigure);
+            title(app.UIAxes3_2, 'Key')
+            app.UIAxes3_2.XTick = [];
+            app.UIAxes3_2.YTick = [];
+            app.UIAxes3_2.Box = 'on';
+            app.UIAxes3_2.ButtonDownFcn = createCallbackFcn(app, @UIAxes3_2ButtonDown, true);
+            app.UIAxes3_2.Position = [483 154 385 240];
+
+            % Show the figure after all components are created
+            app.UIFigure.Visible = 'on';
+        end
+    end
+
+    % App creation and deletion
+    methods (Access = public)
+
+        % Construct app
+        function app = cromakeyapp
+
+            % Create UIFigure and components
+            createComponents(app)
+
+            % Register the app with App Designer
+            registerApp(app, app.UIFigure)
+
+            if nargout == 0
+                clear app
+            end
+        end
+
+        % Code that executes before app deletion
+        function delete(app)
+
+            % Delete UIFigure when app is deleted
+            delete(app.UIFigure)
+        end
+    end
+end]]></w:t></w:r></w:p></w:body></w:document>
